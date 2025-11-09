@@ -1,0 +1,44 @@
+# Adaptive Trading Bot Configuration
+
+# Trading Settings
+trading:
+  ticker: "KRW-BTC"  # Trading pair
+  investment_ratio: 0.95  # Percentage of available KRW to invest
+  dry_run: true  # Set to false for real trading
+  check_interval: 10  # Seconds between market checks
+
+# Strategy Parameters
+strategy:
+  # Trend Strategy (Volatility Breakout)
+  trend:
+    k_value: 0.5  # Volatility breakout coefficient
+    
+  # Range Strategy (RSI Mean Reversion)
+  range:
+    rsi_period: 14
+    rsi_oversold: 30
+    rsi_overbought: 70
+    
+  # Market Analysis for Strategy Switching
+  market_analysis:
+    adx_period: 14
+    adx_threshold: 25  # ADX > 25 indicates trending market
+    atr_period: 14
+    bb_period: 20
+    bb_std: 2
+
+# Risk Management
+risk:
+  max_position_size: 0.95  # Maximum position size as ratio of portfolio
+  stop_loss_pct: 0.05  # Stop loss at 5% loss
+  take_profit_pct: 0.10  # Take profit at 10% gain
+  
+# Rate Limiting (Upbit limits)
+rate_limit:
+  requests_per_second: 8
+  requests_per_minute: 200
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_file: "logs/trading_bot.log"
