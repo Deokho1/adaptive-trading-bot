@@ -210,3 +210,12 @@ class PositionManager:
     def get_position_count_by_mode(self, mode: MarketMode) -> int:
         """Get number of positions for a specific mode."""
         return len(self.get_positions_by_mode(mode))
+    
+    def clear_positions(self) -> None:
+        """
+        Clear all positions and save to file.
+        
+        Useful for testing or manual intervention.
+        """
+        self.positions = []
+        self.save_positions()
