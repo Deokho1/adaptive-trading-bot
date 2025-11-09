@@ -48,3 +48,30 @@ risk:
   
   # Position limits
   max_positions_total: 3     # Maximum number of open positions
+
+strategies:
+  trend:
+    enabled: true
+    k_atr: 0.5               # ATR multiplier for breakout level
+    min_volume_factor: 1.2   # Minimum volume vs average
+    per_trade_pct: 0.05      # Portfolio percentage per trade (5%)
+    max_positions: 3         # Max concurrent trend positions
+    rsi_period: 14           # RSI calculation period
+    stop_loss_pct: 0.03      # Fixed stop loss (3%)
+    trail_stop_pct: 0.05     # Trailing stop (5%)
+    rsi_exit: 70.0           # RSI exit level (overbought)
+    max_hold_hours: 24       # Maximum hold time
+
+  range:
+    enabled: true
+    per_trade_pct: 0.03      # Portfolio percentage per trade (3%)
+    rsi_period: 14           # RSI calculation period
+    rsi_entry: 30.0          # RSI entry level (oversold)
+    rsi_exit: 50.0           # RSI exit level (neutral)
+    take_profit_pct: 0.04    # Take profit level (4%)
+    fixed_stop_pct: 0.02     # Fixed stop loss (2%)
+    atr_stop_n: 1.0          # ATR multiplier for dynamic stop
+
+  symbols:
+    - "KRW-BTC"              # Primary trading symbol
+    - "KRW-ETH"              # Secondary symbol (if enabled)
