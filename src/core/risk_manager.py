@@ -8,7 +8,7 @@ Manages trading risks including:
 - Maximum position limits
 """
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 import logging
 
 
@@ -170,6 +170,3 @@ class RiskManager:
             'stop_loss_price': entry_price * (1 - self.stop_loss_pct),
             'take_profit_price': entry_price * (1 + self.take_profit_pct)
         }
-
-
-from typing import Tuple
