@@ -25,13 +25,18 @@ class MarketMode(Enum):
     """
     Market mode classification for trading strategy selection.
     
-    - TREND: Strong directional movement, suitable for trend-following strategies
+    - TREND_UP: Strong upward trend, high exposure suitable
+    - TREND_DOWN: Strong downward trend, low exposure for capital preservation
     - RANGE: Sideways movement, suitable for mean-reversion strategies  
-    - NEUTRAL: Uncertain conditions, cautious or no trading
+    - NEUTRAL: Uncertain conditions, moderate exposure
     """
-    TREND = "trend"
+    TREND_UP = "trend_up"
+    TREND_DOWN = "trend_down"
     RANGE = "range"
     NEUTRAL = "neutral"
+    
+    # Legacy compatibility
+    TREND = "trend"  # Will be mapped to TREND_UP or TREND_DOWN
     
     def __str__(self) -> str:
         return self.value.upper()

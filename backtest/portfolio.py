@@ -35,15 +35,27 @@ class BacktestPortfolio:
     Virtual portfolio for backtesting.
     
     Tracks cash, positions, and equity over time during backtesting.
+    Enhanced with Maximum Drawdown (MDD) tracking.
     """
     initial_cash: float
     cash: float
     positions: Dict[str, Position] = field(default_factory=dict)
     history: List[PortfolioSnapshot] = field(default_factory=list)
     
+    # MDD tracking attributes
+    max_equity: float = 0.0
+    max_drawdown: float = 0.0
+    current_drawdown: float = 0.0
+    
     def __post_init__(self):
         """Initialize portfolio after creation."""
+        # Initialize MDD tracking
+        self.max_equity = self.initial_cash
+        self.max_drawdown = 0.0
+        self.current_drawdown = 0.0
+        
         logger.info(f"BacktestPortfolio initialized with {self.initial_cash:,.0f} KRW")
+        logger.info(f"MDD tracking enabled - max_equity initialized to {self.max_equity:,.0f} KRW")
     
     def apply_fill(
         self,
@@ -185,6 +197,9 @@ class BacktestPortfolio:
         equity = self.cash + positions_value
         unrealized_pnl = equity - self.initial_cash
         
+        # Update MDD tracking
+        self._update_drawdown(equity)
+        
         # Create snapshot
         snapshot = PortfolioSnapshot(
             ts=ts,
@@ -307,10 +322,68 @@ class BacktestPortfolio:
             latest = self.history[-1]
             return (
                 f"BacktestPortfolio(equity={latest.equity:,.0f}, "
-                f"cash={self.cash:,.0f}, positions={len(self.positions)})"
+                f"cash={self.cash:,.0f}, positions={len(self.positions)}, "
+                f"MDD={self.max_drawdown:.2f}%)"
             )
         else:
             return (
                 f"BacktestPortfolio(cash={self.cash:,.0f}, "
-                f"positions={len(self.positions)})"
+                f"positions={len(self.positions)}, "
+                f"MDD={self.max_drawdown:.2f}%)"
             )
+    
+    def _update_drawdown(self, current_equity: float) -> None:
+        """
+        Update Maximum Drawdown tracking.
+        
+        Args:
+            current_equity: Current portfolio equity
+        """
+        # Update max equity if current is higher
+        if current_equity > self.max_equity:
+            self.max_equity = current_equity
+            self.current_drawdown = 0.0  # Reset drawdown when reaching new high
+        else:
+            # Calculate current drawdown
+            self.current_drawdown = (current_equity - self.max_equity) / self.max_equity * 100
+            
+            # Update max drawdown if current drawdown is worse
+            if self.current_drawdown < self.max_drawdown:
+                self.max_drawdown = self.current_drawdown
+                logger.debug(f"New Max Drawdown: {self.max_drawdown:.2f}% "
+                           f"(equity: {current_equity:,.0f}, peak: {self.max_equity:,.0f})")
+    
+    def get_max_drawdown(self) -> float:
+        """
+        Get the maximum drawdown percentage.
+        
+        Returns:
+            Maximum drawdown as negative percentage (e.g., -12.4)
+        """
+        return self.max_drawdown
+    
+    def get_current_drawdown(self) -> float:
+        """
+        Get the current drawdown percentage.
+        
+        Returns:
+            Current drawdown as negative percentage
+        """
+        return self.current_drawdown
+    
+    def log_final_results(self) -> None:
+        """
+        Log final backtest results including MDD.
+        """
+        if not self.history:
+            logger.error("No history available for final results")
+            return
+            
+        final_snapshot = self.history[-1]
+        total_return = (final_snapshot.equity - self.initial_cash) / self.initial_cash * 100
+        
+        logger.info("=" * 60)
+        logger.info("[RESULT] FINAL EQUITY: ₩{:,.0f}".format(final_snapshot.equity))
+        logger.info("[RESULT] TOTAL RETURN: {:+.2f}%".format(total_return))
+        logger.info("[RESULT] MAX DRAWDOWN: {:.2f}%".format(self.max_drawdown))
+        logger.info("=" * 60)

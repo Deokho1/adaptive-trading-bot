@@ -24,20 +24,20 @@ market_analyzer:
   bb_period: 20
   bb_stddev: 2.0
   
-  # TREND mode thresholds
-  adx_trend_enter: 25.0      # ADX above this to enter TREND
-  adx_trend_exit: 20.0       # ADX above this to stay in TREND
-  atr_trend_min: 2.0         # Minimum ATR ratio for TREND
+  # TREND mode thresholds (KEEP AS-IS - working well)
+  adx_trend_enter: 22.0      # ADX above this to enter TREND
+  adx_trend_exit: 18.0       # ADX above this to stay in TREND  
+  atr_trend_min: 1.0         # Minimum ATR ratio for TREND
   
-  # RANGE mode thresholds  
-  adx_range_enter: 20.0      # ADX below this to enter RANGE
-  adx_range_exit: 25.0       # ADX below this to stay in RANGE
-  bw_range_enter: 5.0        # BandWidth below this to enter RANGE
-  bw_range_exit: 8.0         # BandWidth below this to stay in RANGE
-  atr_range_max: 3.0         # Maximum ATR ratio for RANGE
+  # RANGE mode thresholds (UPDATED - much more relaxed for 10-30% coverage)
+  adx_range_enter: 30.0      # ADX below this to enter RANGE (was 22.0)
+  adx_range_exit: 35.0       # ADX below this to stay in RANGE (was 25.0)
+  bw_range_enter: 12.0       # BandWidth below this to enter RANGE (was 8.0)
+  bw_range_exit: 15.0        # BandWidth below this to stay in RANGE (was 10.0)
+  atr_range_max: 6.0         # Maximum ATR ratio for RANGE (was 4.5)
   
   # Mode persistence
-  cooldown_hours: 4          # Hours to wait before mode change
+  cooldown_hours: 2          # Hours to wait before mode change (was 4)
 
 risk:
   # Capital allocation limits (percentage of portfolio)

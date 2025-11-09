@@ -7,10 +7,13 @@ to classify market conditions into TREND, RANGE, or NEUTRAL modes.
 
 from datetime import datetime, timedelta
 from typing import Dict, List
+import logging
 
 from core.types import MarketMode
 from exchange.models import Candle
 from .indicators import compute_atr, compute_adx, compute_bollinger_bands
+
+logger = logging.getLogger(__name__)
 
 
 class MarketAnalyzer:
@@ -38,20 +41,24 @@ class MarketAnalyzer:
         self.bb_period = analyzer_config.get("bb_period", 20)
         self.bb_stddev = analyzer_config.get("bb_stddev", 2.0)
         
-        # TREND thresholds
-        self.adx_trend_enter = analyzer_config.get("adx_trend_enter", 25.0)
-        self.adx_trend_exit = analyzer_config.get("adx_trend_exit", 20.0)
-        self.atr_trend_min = analyzer_config.get("atr_trend_min", 2.0)
+        # TREND thresholds (KEEP AS-IS - working well)
+        self.adx_trend_enter = analyzer_config.get("adx_trend_enter", 22.0)  # was 25.0
+        self.adx_trend_exit = analyzer_config.get("adx_trend_exit", 18.0)    # was 20.0
+        self.atr_trend_min = analyzer_config.get("atr_trend_min", 1.0)       # was 2.0
         
-        # RANGE thresholds
-        self.adx_range_enter = analyzer_config.get("adx_range_enter", 20.0)
-        self.adx_range_exit = analyzer_config.get("adx_range_exit", 25.0)
-        self.bw_range_enter = analyzer_config.get("bw_range_enter", 5.0)
-        self.bw_range_exit = analyzer_config.get("bw_range_exit", 8.0)
-        self.atr_range_max = analyzer_config.get("atr_range_max", 3.0)
+        # RANGE thresholds (UPDATED - much more relaxed for 10-30% coverage)
+        self.adx_range_enter = analyzer_config.get("adx_range_enter", 30.0)  # was 22.0
+        self.adx_range_exit = analyzer_config.get("adx_range_exit", 35.0)    # was 25.0
+        self.bw_range_enter = analyzer_config.get("bw_range_enter", 12.0)    # was 8.0
+        self.bw_range_exit = analyzer_config.get("bw_range_exit", 15.0)      # was 10.0
+        self.atr_range_max = analyzer_config.get("atr_range_max", 6.0)       # was 4.5
         
         # Mode persistence
-        self.cooldown_hours = analyzer_config.get("cooldown_hours", 4)
+        self.cooldown_hours = analyzer_config.get("cooldown_hours", 2)       # was 4
+        
+        # Trend direction parameters
+        self.ma_period = analyzer_config.get("ma_period", 30)                # Moving average for trend direction (더 반응성 향상)
+        self.slope_lookback = analyzer_config.get("slope_lookback", 3)       # Lookback for slope calculation (더 빠른 감지)
         
         # State
         self.current_mode: MarketMode = MarketMode.NEUTRAL
@@ -85,9 +92,12 @@ class MarketAnalyzer:
         
         # Extract closing prices for Bollinger Bands
         closes = [candle.close for candle in btc_candles]
-        bb_middle, bb_upper, bb_lower = compute_bollinger_bands(
+        bb_result = compute_bollinger_bands(
             closes, self.bb_period, self.bb_stddev
         )
+        
+        # bb_result is (middle, upper, lower)
+        bb_middle, bb_upper, bb_lower = bb_result
         
         # Get latest values
         latest_atr = atr_values[-1] if atr_values else 0.0
@@ -116,6 +126,52 @@ class MarketAnalyzer:
             "adx": latest_adx,
             "bandwidth": bandwidth
         }
+    
+    def _detect_trend_direction(self, btc_candles: List[Candle]) -> str:
+        """
+        Detect trend direction using moving average slope.
+        
+        Args:
+            btc_candles: List of BTC candles
+        
+        Returns:
+            Trend direction: "UP", "DOWN", or "FLAT"
+        """
+        if len(btc_candles) < max(self.ma_period, self.slope_lookback + 1):
+            return "FLAT"
+        
+        # Extract closing prices
+        closes = [candle.close for candle in btc_candles]
+        
+        # Calculate simple moving average
+        if len(closes) < self.ma_period:
+            return "FLAT"
+        
+        ma_values = []
+        for i in range(self.ma_period - 1, len(closes)):
+            ma_window = closes[i - self.ma_period + 1:i + 1]
+            ma_values.append(sum(ma_window) / len(ma_window))
+        
+        if len(ma_values) < self.slope_lookback + 1:
+            return "FLAT"
+        
+        # Get current price and MA
+        current_close = closes[-1]
+        current_ma = ma_values[-1]
+        
+        # Calculate slope (recent MA change)
+        slope = ma_values[-1] - ma_values[-self.slope_lookback]
+        
+        # Debug log for slope calculation
+        logger.debug(f"[DEBUG][bot] Slope={slope:.4f}, MA period={self.ma_period}, lookback={self.slope_lookback}")
+        
+        # Determine trend direction
+        if current_close > current_ma and slope > 0:
+            return "UP"
+        elif current_close < current_ma and slope < 0:
+            return "DOWN"
+        else:
+            return "FLAT"
     
     def update_mode(self, btc_candles: List[Candle], now: datetime) -> MarketMode:
         """
@@ -146,17 +202,105 @@ class MarketAnalyzer:
         adx_value = metrics["adx"]
         bandwidth = metrics["bandwidth"]
         
+        # Detect trend direction
+        trend_direction = self._detect_trend_direction(btc_candles)
+        
         # Determine new mode based on current mode and thresholds
-        new_mode = self._classify_market_mode(
-            adx_value, atr_ratio, bandwidth, self.current_mode
+        new_mode = self._classify_market_mode_with_direction(
+            adx_value, atr_ratio, bandwidth, trend_direction, self.current_mode
         )
         
         # Update state if mode changed
         if new_mode != self.current_mode:
             self.current_mode = new_mode
             self.last_mode_change = now
+            
+            # Log mode changes with trend direction info
+            import logging
+            logger = logging.getLogger(__name__)
+            if new_mode in [MarketMode.TREND_UP, MarketMode.TREND_DOWN]:
+                logger.info(
+                    f"[INFO][bot] MarketMode: {new_mode.value.upper()} (slope={trend_direction}, ADX={adx_value:.1f})"
+                )
+        
+        # Debug log for RANGE detection (DEBUG level only)
+        if new_mode == MarketMode.RANGE:
+            import logging
+            logger = logging.getLogger(__name__)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "[RANGE] ts=%s ADX=%.1f BW=%.2f%% ATR_ratio=%.2f%%",
+                    now.strftime('%Y-%m-%d %H:%M'), adx_value, bandwidth, atr_ratio
+                )
         
         return self.current_mode
+    
+    def _classify_market_mode_with_direction(
+        self, 
+        adx_value: float, 
+        atr_ratio: float, 
+        bandwidth: float,
+        trend_direction: str,
+        current_mode: MarketMode
+    ) -> MarketMode:
+        """
+        Classify market mode with trend direction awareness.
+        
+        Args:
+            adx_value: ADX indicator value
+            atr_ratio: ATR as percentage of price
+            bandwidth: Bollinger Band width percentage
+            trend_direction: "UP", "DOWN", or "FLAT"
+            current_mode: Current market mode for hysteresis
+        
+        Returns:
+            New market mode
+        """
+        # Check for TREND conditions first
+        if current_mode in [MarketMode.TREND_UP, MarketMode.TREND_DOWN, MarketMode.TREND]:
+            # Exit thresholds for TREND
+            if (adx_value < self.adx_trend_exit or 
+                atr_ratio < self.atr_trend_min):
+                # Fall back to RANGE or NEUTRAL
+                pass  # Continue to RANGE/NEUTRAL checks
+            else:
+                # Stay in TREND, but update direction
+                if trend_direction == "UP":
+                    return MarketMode.TREND_UP
+                elif trend_direction == "DOWN":
+                    return MarketMode.TREND_DOWN
+                else:
+                    return MarketMode.NEUTRAL  # Flat trend
+        
+        # Check for TREND entry
+        if (adx_value >= self.adx_trend_enter and 
+            atr_ratio >= self.atr_trend_min):
+            if trend_direction == "UP":
+                return MarketMode.TREND_UP
+            elif trend_direction == "DOWN":
+                return MarketMode.TREND_DOWN
+            # If trend strength is high but direction is flat, use NEUTRAL
+            return MarketMode.NEUTRAL
+        
+        # Check for RANGE conditions
+        if current_mode == MarketMode.RANGE:
+            # Exit thresholds for RANGE
+            if (adx_value > self.adx_range_exit or 
+                bandwidth > self.bw_range_exit or 
+                atr_ratio > self.atr_range_max):
+                # Fall back to NEUTRAL
+                return MarketMode.NEUTRAL
+            else:
+                return MarketMode.RANGE
+        else:
+            # Entry thresholds for RANGE
+            if (adx_value <= self.adx_range_enter and 
+                bandwidth <= self.bw_range_enter and 
+                atr_ratio <= self.atr_range_max):
+                return MarketMode.RANGE
+        
+        # Default to NEUTRAL if no clear trend or range
+        return MarketMode.NEUTRAL
     
     def _classify_market_mode(
         self, 
