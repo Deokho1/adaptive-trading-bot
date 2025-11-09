@@ -218,6 +218,21 @@ class BacktestRunner:
         
         logger.info(f"Backtest completed: {end_idx - start_idx} steps processed")
         
+        # Save backtest results to CSV
+        try:
+            results_dir = Path("results")
+            results_dir.mkdir(exist_ok=True)
+            
+            # Generate timestamp for unique filename
+            timestamp = end_time.strftime("%Y%m%d_%H%M%S")
+            csv_path = results_dir / f"backtest_history_{timestamp}.csv"
+            
+            portfolio.save_history_csv(csv_path)
+            logger.info(f"백테스트 결과가 저장되었습니다: {csv_path}")
+            
+        except Exception as e:
+            logger.error(f"백테스트 결과 저장 중 오류 발생: {e}")
+        
         return BacktestResult(
             portfolio=portfolio,
             start_time=start_time,

@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List
+from pathlib import Path
 
 from exchange.models import Position
 from core.types import OrderSide, MarketMode
@@ -267,6 +268,38 @@ class BacktestPortfolio:
             "position_count": self.get_position_count(),
             "history_length": len(self.history),
         }
+    
+    def save_history_csv(self, path: Path) -> None:
+        """
+        포트폴리오 스냅샷을 CSV 파일로 저장합니다.
+        
+        Args:
+            path: CSV 파일 저장 경로
+        """
+        if not self.history:
+            logger.warning("포트폴리오 히스토리가 비어있어 CSV를 저장할 수 없습니다.")
+            return
+        
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                # CSV 헤더 작성
+                f.write("ts,equity,cash,positions_value,unrealized_pnl\n")
+                
+                # 데이터 작성 (오래된 것부터 최신 순서)
+                for snapshot in self.history:
+                    f.write(
+                        f"{snapshot.ts.isoformat()},"
+                        f"{snapshot.equity},"
+                        f"{snapshot.cash},"
+                        f"{snapshot.positions_value},"
+                        f"{snapshot.unrealized_pnl}\n"
+                    )
+            
+            logger.info(f"포트폴리오 히스토리 CSV 저장 완료: {path} ({len(self.history)}개 스냅샷)")
+            
+        except Exception as e:
+            logger.error(f"CSV 저장 실패 {path}: {e}")
+            raise
     
     def __str__(self) -> str:
         """String representation of portfolio."""
