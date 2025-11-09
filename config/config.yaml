@@ -1,4 +1,5 @@
 app:
+  mode: "paper"              # "paper" | "live" | "backtest"
   timezone: "Asia/Seoul"
   dry_run: true
 

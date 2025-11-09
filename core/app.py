@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from core.config_loader import load_config
-from core.types import MarketMode
+from core.types import MarketMode, TradingMode
 from exchange.rate_limiter import RateLimiter
 from exchange.upbit_client import UpbitClient
 from exchange.models import Candle
@@ -28,7 +28,11 @@ from risk.risk_manager import RiskManager
 from strategy.trend_vol_breakout import VolatilityBreakoutStrategy
 from strategy.range_rsi_meanrev import RSIMeanReversionStrategy
 from strategy.strategy_manager import StrategyManager
-from execution.execution_engine import ExecutionEngine
+from execution.execution_engine import (
+    PaperExecutionEngine,
+    LiveExecutionEngine,
+    BacktestExecutionEngine,
+)
 
 logger = logging.getLogger("bot")
 
@@ -38,7 +42,7 @@ class BotApp:
     Main orchestration class for the adaptive trading bot.
     
     Wires together all components and provides the main execution loop.
-    Runs in dry-run mode using only public API endpoints.
+    Supports multiple trading modes: paper, live, backtest.
     """
     
     def __init__(self, config: dict[str, Any]) -> None:
@@ -51,11 +55,12 @@ class BotApp:
         self.config = config
         
         # Basic settings
+        self.mode = TradingMode(config["app"].get("mode", "paper"))
         self.timezone_name: str = config["app"]["timezone"]
         self.dry_run: bool = config["app"]["dry_run"]
         self.symbols: list[str] = config["strategies"]["symbols"]
         
-        logger.info(f"Initializing BotApp (dry_run={self.dry_run}, symbols={self.symbols})")
+        logger.info(f"Initializing BotApp (mode={self.mode.value}, symbols={self.symbols})")
         
         # Rate limiter
         self.rate_limiter = RateLimiter(
@@ -63,7 +68,7 @@ class BotApp:
             max_calls_per_sec_private=config["exchange"]["private_rate_limit"]["max_calls_per_sec"],
         )
         
-        # Upbit client (PUBLIC only for now)
+        # Upbit client
         self.client = UpbitClient(
             base_url=config["exchange"]["base_url"],
             rate_limiter=self.rate_limiter,
@@ -88,22 +93,36 @@ class BotApp:
             range_strategy=self.range_strategy,
         )
         
-        # Execution engine (dry_run)
-        self.execution_engine = ExecutionEngine(
-            upbit_client=self.client,
-            position_manager=self.position_manager,
-            risk_manager=self.risk_manager,
-            dry_run=self.dry_run,
-        )
+        # Execution engine - choose based on mode
+        if self.mode == TradingMode.PAPER:
+            self.execution_engine = PaperExecutionEngine(
+                upbit_client=self.client,
+                position_manager=self.position_manager,
+                risk_manager=self.risk_manager,
+            )
+        elif self.mode == TradingMode.LIVE:
+            logger.warning("LIVE trading mode selected, but LiveExecutionEngine is not implemented yet.")
+            self.execution_engine = LiveExecutionEngine(
+                upbit_client=self.client,
+                position_manager=self.position_manager,
+                risk_manager=self.risk_manager,
+            )
+        elif self.mode == TradingMode.BACKTEST:
+            logger.warning("BACKTEST mode is not handled by BotApp yet. Use a separate BacktestRunner.")
+            self.execution_engine = BacktestExecutionEngine(
+                position_manager=self.position_manager,
+                risk_manager=self.risk_manager,
+            )
+        else:
+            raise ValueError(f"Unsupported trading mode: {self.mode}")
         
-        logger.info("BotApp initialized successfully")
+        logger.info(f"BotApp initialized successfully (mode={self.mode.value})")
         logger.info(f"Components: {self.strategy_manager}, {self.execution_engine}")
     
     def __str__(self) -> str:
         """String representation of BotApp."""
-        mode = "DRY_RUN" if self.dry_run else "LIVE"
         positions = len(self.position_manager.get_positions())
-        return f"BotApp(mode={mode}, symbols={len(self.symbols)}, positions={positions})"
+        return f"BotApp(mode={self.mode.value}, symbols={len(self.symbols)}, positions={positions})"
     
     def _get_now(self) -> datetime:
         """

@@ -8,6 +8,19 @@ the trading bot system.
 from enum import Enum
 
 
+class TradingMode(str, Enum):
+    """
+    Trading mode selection for bot operation.
+    
+    - PAPER: Virtual trading using real market data but simulated orders
+    - LIVE: Real trading with actual orders and money
+    - BACKTEST: Historical simulation using past data
+    """
+    PAPER = "paper"
+    LIVE = "live"
+    BACKTEST = "backtest"
+
+
 class MarketMode(Enum):
     """
     Market mode classification for trading strategy selection.

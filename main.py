@@ -31,8 +31,9 @@ def main() -> None:
             config["persistence"]["log_level"],
         )
         
-        logger.info("🚀 Starting Adaptive Trading Bot (Step 7)")
+        logger.info("🚀 Starting Adaptive Trading Bot (Multi-Mode Support)")
         logger.info(f"Configuration loaded from: {Path('config/config.yaml').absolute()}")
+        logger.info(f"Trading mode: {config['app']['mode']}")
         logger.info(f"Dry run mode: {config['app']['dry_run']}")
         
         # Create and run bot application
