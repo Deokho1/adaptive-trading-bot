@@ -6,8 +6,8 @@ including fetching candle data and ticker prices.
 """
 
 import requests
-from datetime import datetime
-from typing import List
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from .models import Candle
 from .rate_limiter import RateLimiter
@@ -55,6 +55,29 @@ class UpbitClient:
             requests.RequestException: If the API request fails
             ValueError: If the response format is invalid
         """
+        return self.get_candles_4h_page(symbol, count, to=None)
+    
+    def get_candles_4h_page(
+        self,
+        symbol: str,
+        count: int = 200,
+        to: Optional[datetime] = None,
+    ) -> List[Candle]:
+        """
+        Fetch a single page of 4h candles for the given symbol.
+        
+        Args:
+            symbol: Trading pair symbol (e.g., "KRW-BTC")
+            count: Number of candles to fetch (max 200, default 200)
+            to: End time for candles (UTC). If None, fetch most recent candles.
+        
+        Returns:
+            List of Candle objects, ordered from oldest to newest
+        
+        Raises:
+            requests.RequestException: If the API request fails
+            ValueError: If the response format is invalid
+        """
         # Apply rate limiting
         self.rate_limiter.wait_public()
         
@@ -64,6 +87,12 @@ class UpbitClient:
             'market': symbol,
             'count': min(count, 200)  # Upbit max is 200
         }
+        
+        # Add 'to' parameter if specified
+        if to is not None:
+            # Convert to UTC and format as ISO8601
+            to_utc = to.astimezone(timezone.utc)
+            params['to'] = to_utc.strftime("%Y-%m-%dT%H:%M:%S%z")
         
         try:
             response = self.session.get(url, params=params)

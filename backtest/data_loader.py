@@ -47,8 +47,14 @@ class BacktestDataLoader:
             symbol: Trading symbol (e.g., "KRW-BTC")
             
         Returns:
-            Filename for the symbol (e.g., "KRW-BTC.csv")
+            Filename for the symbol (e.g., "KRW-BTC_240m.csv" or "KRW-BTC.csv")
         """
+        # Try the new format first (with timeframe suffix)
+        new_format = f"{symbol}_240m.csv"
+        if (self.data_dir / new_format).exists():
+            return new_format
+        
+        # Fall back to simple format
         return f"{symbol}.csv"
     
     def load_symbol(self, symbol: str) -> List[Candle]:
