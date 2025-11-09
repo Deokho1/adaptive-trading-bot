@@ -1,0 +1,17 @@
+app:
+  timezone: "Asia/Seoul"
+  dry_run: true
+
+exchange:
+  name: "upbit"
+  base_url: "https://api.upbit.com"
+  public_rate_limit:
+    max_calls_per_sec: 5
+  private_rate_limit:
+    max_calls_per_sec: 2
+
+persistence:
+  positions_file: "state/positions.json"
+  app_state_file: "state/app_state.json"
+  logs_dir: "logs"
+  log_level: "INFO"
