@@ -15,3 +15,36 @@ persistence:
   app_state_file: "state/app_state.json"
   logs_dir: "logs"
   log_level: "INFO"
+
+market_analyzer:
+  # Indicator periods
+  adx_period: 14
+  atr_period: 14
+  bb_period: 20
+  bb_stddev: 2.0
+  
+  # TREND mode thresholds
+  adx_trend_enter: 25.0      # ADX above this to enter TREND
+  adx_trend_exit: 20.0       # ADX above this to stay in TREND
+  atr_trend_min: 2.0         # Minimum ATR ratio for TREND
+  
+  # RANGE mode thresholds  
+  adx_range_enter: 20.0      # ADX below this to enter RANGE
+  adx_range_exit: 25.0       # ADX below this to stay in RANGE
+  bw_range_enter: 5.0        # BandWidth below this to enter RANGE
+  bw_range_exit: 8.0         # BandWidth below this to stay in RANGE
+  atr_range_max: 3.0         # Maximum ATR ratio for RANGE
+  
+  # Mode persistence
+  cooldown_hours: 4          # Hours to wait before mode change
+
+risk:
+  # Capital allocation limits (percentage of portfolio)
+  max_trend_cap_pct: 30.0    # Maximum capital for TREND positions
+  max_range_cap_pct: 20.0    # Maximum capital for RANGE positions
+  
+  # Daily loss protection
+  daily_loss_limit_pct: 5.0  # Daily loss limit (kill switch trigger)
+  
+  # Position limits
+  max_positions_total: 3     # Maximum number of open positions
