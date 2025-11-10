@@ -45,18 +45,15 @@ def compute_max_drawdown(equity_series: Union[np.ndarray, List, pd.Series]) -> f
     if len(equity_series) <= 1:
         return 0.0
     
-    equity_array = np.array(equity_series)
+    # Convert to pandas Series for cummax functionality
+    if not isinstance(equity_series, pd.Series):
+        equity_series = pd.Series(equity_series)
     
-    # Calculate running maximum (peak values)
-    rolling_max = np.maximum.accumulate(equity_array)
+    # Calculate drawdown using the correct formula
+    drawdown = (equity_series - equity_series.cummax()) / equity_series.cummax()
     
-    # Calculate drawdown at each point
-    drawdown = equity_array / rolling_max - 1.0
-    
-    # Maximum drawdown is the most negative value
-    max_dd = abs(np.min(drawdown)) * 100.0
-    
-    return max_dd
+    # Return maximum drawdown as positive percentage
+    return abs(drawdown.min() * 100)
 
 
 def compute_sharpe_ratio(equity_series: Union[np.ndarray, List, pd.Series], 

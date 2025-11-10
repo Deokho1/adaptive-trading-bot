@@ -58,7 +58,7 @@ class MarketAnalyzer:
         
         # Trend direction parameters
         self.ma_period = analyzer_config.get("ma_period", 30)                # Moving average for trend direction (더 반응성 향상)
-        self.slope_lookback = analyzer_config.get("slope_lookback", 3)       # Lookback for slope calculation (더 빠른 감지)
+        self.slope_lookback = analyzer_config.get("slope_lookback", 8)       # Lookback for slope calculation (changed from 3 to 8 for smoother detection)
         
         # State
         self.current_mode: MarketMode = MarketMode.NEUTRAL
@@ -201,6 +201,9 @@ class MarketAnalyzer:
         atr_ratio = metrics["atr_ratio"]
         adx_value = metrics["adx"]
         bandwidth = metrics["bandwidth"]
+        
+        # Store latest ADX for external access
+        self.latest_adx = adx_value
         
         # Detect trend direction
         trend_direction = self._detect_trend_direction(btc_candles)
