@@ -1,8 +1,6 @@
-""""""
-
-Backtest runner and execution frameworkBacktest package for historical trading simulation.
-
 """
+Backtest package for historical trading simulation.
+
 This package provides functionality to backtest trading strategies
 using historical OHLCV data from CSV files.
 """

@@ -1,0 +1,5 @@
+BACKTEST DEBUG SUMMARY
+==================================================
+
+Total BTC Trades: 1982
+Total SOL Trades: 52
