@@ -86,53 +86,74 @@ class DecisionEngine:
             config: Strategy configuration
         """
         self.config = config
-        self.candle_count = 0
-        self.has_position = False
-        self.last_buy_price = 0.0
         
-    def make_decision(self, bar: MarketData) -> TradingDecision:
+    def make_decision(
+        self, 
+        market_data: MarketData,
+        current_position: Optional[Dict] = None
+    ) -> TradingDecision:
         """
-        Make trading decision based on current market data
+        Make trading decision based on current market data and position
         
         Args:
-            bar: Current market data
+            market_data: Current market data (OHLCV)
+            current_position: Current position info (None if no position)
+                - If provided: {quantity, entry_price, entry_time}
             
         Returns:
-            TradingDecision: Trading decision
+            TradingDecision: Trading decision (BUY, SELL, or HOLD)
         """
-        self.candle_count += 1
-        current_price = bar.close
+        current_price = market_data.close
         
-        # Simple mock logic: Buy every N candles, sell when profit > 1%
-        action = "HOLD"
-        size_usd = 0.0
-        reason = "no_signal"
-        
-        if not self.has_position:
-            # Buy logic: every N candles
-            if self.candle_count % self.config.buy_interval == 0:
-                action = "BUY"
-                size_usd = self.config.position_size_usd
-                reason = f"buy_every_{self.config.buy_interval}_candles"
-                self.has_position = True
-                self.last_buy_price = current_price
-        else:
-            # Sell logic: when profit > 1% or loss > -0.5%
-            pnl_pct = ((current_price - self.last_buy_price) / self.last_buy_price) * 100
+        if current_position is None:
+            # === 포지션 없음 → 진입 판단 ===
+            # TODO: 사용자가 직접 진입 조건 구현
+            # 예시:
+            # if 진입_조건_만족:
+            #     action = "BUY"
+            #     size_usd = 진입_금액
+            #     reason = "진입_이유"
+            # else:
+            #     action = "HOLD"
+            #     size_usd = 0.0
+            #     reason = "진입_조건_불만족"
             
-            if pnl_pct > 1.0:
-                action = "SELL"
-                size_usd = self.config.position_size_usd
-                reason = f"take_profit_at_{pnl_pct:.2f}%"
-                self.has_position = False
-            elif pnl_pct < -0.5:
-                action = "SELL"
-                size_usd = self.config.position_size_usd
-                reason = f"stop_loss_at_{pnl_pct:.2f}%"
-                self.has_position = False
+            action = "HOLD"
+            size_usd = 0.0
+            reason = "진입_조건_미구현"
+            
+        else:
+            # === 포지션 있음 → 청산 판단 (추가 매수 없음) ===
+            entry_price = current_position['entry_price']
+            entry_time = current_position['entry_time']
+            
+            # 손익률 계산
+            pnl_pct = ((current_price - entry_price) / entry_price) * 100
+            
+            # 보유 시간 계산
+            hold_time = market_data.timestamp - entry_time
+            
+            # TODO: 사용자가 직접 청산 조건 구현
+            # 예시:
+            # if pnl_pct > take_profit_threshold:
+            #     action = "SELL"
+            #     reason = f"take_profit_{pnl_pct:.2f}%"
+            # elif pnl_pct < stop_loss_threshold:
+            #     action = "SELL"
+            #     reason = f"stop_loss_{pnl_pct:.2f}%"
+            # elif hold_time > max_hold_time:
+            #     action = "SELL"
+            #     reason = f"max_hold_time_exceeded"
+            # else:
+            #     action = "HOLD"
+            #     reason = "청산_조건_불만족"
+            
+            action = "HOLD"
+            size_usd = 0.0
+            reason = "청산_조건_미구현"
         
         return TradingDecision(
-            timestamp=bar.timestamp,
+            timestamp=market_data.timestamp,
             symbol=self.config.symbol,
             action=action,
             size_usd=size_usd,
