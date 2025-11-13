@@ -1,4 +1,4 @@
-"""
+# 전략 로직 (진입·청산 조건)
 Core strategy implementation for scalping trading bot.
 
 [ABSOLUTE RULE] 
@@ -6,12 +6,6 @@ Core strategy implementation for scalping trading bot.
 자동화 도구는 함수 시그니처와 구조만 제공하고, 
 실제 진입/청산 조건, 지표 계산, 파라미터는 건드리지 않습니다.
 """
-
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Any
-from datetime import datetime
-import pandas as pd
-
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Any
