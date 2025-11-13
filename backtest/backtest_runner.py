@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 
 from backtest.data_loader import BacktestDataLoader
+from api.exchange_api_backtest import ExchangeAPIBacktest
+import config
 
 
 class BacktestRunner:
@@ -31,6 +33,7 @@ class BacktestRunner:
         self.config_path = Path(config_path)
         self.config: Dict[str, Any] = {}
         self.data_loader = BacktestDataLoader()
+        self.exchange: ExchangeAPIBacktest = None  # 가상 거래소 API
         
     def load_config(self) -> Dict[str, Any]:
         """
@@ -69,6 +72,25 @@ class BacktestRunner:
         )
         
         print(f"[OK] Data loaded: {len(df)} candles")
+        
+        # 3. 가상 거래소 API 초기화
+        print("\n[INFO] Initializing virtual exchange...")
+        backtest_config = config.CONFIG.get("backtest", {})
+        
+        initial_capital = backtest_config.get("initial_capital", 10000000)
+        fee_rate = backtest_config.get("fee_rate", 0.0005)
+        slippage_rate = backtest_config.get("slippage_rate", 0.0003)
+        
+        self.exchange = ExchangeAPIBacktest(
+            initial_capital=initial_capital,
+            fee_rate=fee_rate,
+            slippage_rate=slippage_rate
+        )
+        
+        print(f"[OK] Virtual exchange initialized")
+        print(f"   Initial capital: {initial_capital:,.0f} KRW")
+        print(f"   Fee rate: {fee_rate*100:.3f}%")
+        print(f"   Slippage rate: {slippage_rate*100:.3f}%")
         
         # TODO: 실제 백테스트 로직 구현
         print("\n[INFO] Backtest ready")
