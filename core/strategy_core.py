@@ -1,4 +1,5 @@
-# 전략 로직 (진입·청산 조건)
+"""
+전략 로직 (진입·청산 조건)
 Core strategy implementation for scalping trading bot.
 
 [ABSOLUTE RULE] 
@@ -12,16 +13,31 @@ from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 import pandas as pd
 
+from core.market_watcher import MarketWatcher
+from core.signal_engine import SignalEngine
+
 
 @dataclass
 class StrategyConfig:
     """전략 설정 파라미터 - 사용자가 직접 값을 설정"""
     
-    # Mock strategy parameters for minimal implementation
-    symbol: str = "BTCUSDT"
+    # 기본 설정
+    symbol: str = "KRW-BTC"
     timeframe: str = "1m"
-    buy_interval: int = 10  # Buy every 10 candles (for testing)
-    position_size_usd: float = 1000.0  # Fixed position size for testing
+    
+    # RSI 파라미터
+    rsi_period: int = 14  # RSI 계산 기간
+    rsi_oversold: float = 30.0  # 과매도 기준 (진입)
+    rsi_exit: float = 50.0  # 청산 기준 (중립선 회복)
+    
+    # 진입 조건
+    entry_volume_ratio: float = 1.2  # 거래량 필터 (평균의 1.2배 이상, 0이면 필터 비활성화)
+    entry_position_size_ratio: float = 0.1  # 진입 금액 비율 (자본의 10%)
+    
+    # 청산 조건
+    take_profit_pct: float = 0.3  # 익절: +0.3%
+    stop_loss_pct: float = -0.2  # 손절: -0.2%
+    max_hold_time_minutes: int = 5  # 최대 보유 시간: 5분
     
 
 @dataclass
@@ -72,10 +88,15 @@ class TradingDecision:
 
 class DecisionEngine:
     """
-    Simple decision engine for minimal backtest implementation
+    RSI 기반 단타 전략 의사결정 엔진
     
-    This is a mock implementation for testing the framework.
-    Real strategy logic should be implemented by the user.
+    백테스트와 라이브 모드에서 공통으로 사용 가능합니다.
+    
+    역할:
+    1. MarketWatcher로 지표 계산
+    2. SignalEngine으로 신호 생성
+    3. 포지션 상태별 결정 (손절/익절/시간 체크)
+    4. TradingDecision 반환
     """
     
     def __init__(self, config: StrategyConfig):
@@ -87,10 +108,25 @@ class DecisionEngine:
         """
         self.config = config
         
+        # 모듈 초기화
+        self.market_watcher = MarketWatcher(config)
+        self.signal_engine = SignalEngine(config)
+        
+    def initialize_with_history(self, historical_candles: List[MarketData]):
+        """
+        라이브 모드 시작 시 과거 데이터로 초기화
+        
+        Args:
+            historical_candles: 과거 캔들 데이터 리스트 (시간순)
+        """
+        self.market_watcher.initialize_with_history(historical_candles)
+        print(f"[OK] DecisionEngine initialized")
+    
     def make_decision(
         self, 
         market_data: MarketData,
-        current_position: Optional[Dict] = None
+        current_position: Optional[Dict] = None,
+        available_balance: Optional[float] = None
     ) -> TradingDecision:
         """
         Make trading decision based on current market data and position
@@ -99,29 +135,67 @@ class DecisionEngine:
             market_data: Current market data (OHLCV)
             current_position: Current position info (None if no position)
                 - If provided: {quantity, entry_price, entry_time}
-            
+            available_balance: 사용 가능한 잔고 (KRW) - 진입 금액 계산용
+        
         Returns:
             TradingDecision: Trading decision (BUY, SELL, or HOLD)
         """
+        # 1. 시장 데이터 업데이트
+        self.market_watcher.update(market_data)
+        
         current_price = market_data.close
+        
+        # 2. 지표 계산 가능 여부 확인
+        if not self.market_watcher.is_ready:
+            return TradingDecision(
+                timestamp=market_data.timestamp,
+                symbol=self.config.symbol,
+                action="HOLD",
+                size_usd=0.0,
+                reason="RSI_계산_데이터_부족",
+                price=current_price
+            )
+        
+        # 3. 지표 계산
+        indicators = self.market_watcher.get_indicators(current_volume=market_data.volume)
         
         if current_position is None:
             # === 포지션 없음 → 진입 판단 ===
-            # TODO: 사용자가 직접 진입 조건 구현
-            # 예시:
-            # if 진입_조건_만족:
-            #     action = "BUY"
-            #     size_usd = 진입_금액
-            #     reason = "진입_이유"
-            # else:
-            #     action = "HOLD"
-            #     size_usd = 0.0
-            #     reason = "진입_조건_불만족"
             
-            action = "HOLD"
-            size_usd = 0.0
-            reason = "진입_조건_미구현"
+            # 4. 신호 생성
+            signal = self.signal_engine.generate_signal(
+                market_data=market_data,
+                indicators=indicators,
+                current_position=None
+            )
             
+            if signal and signal.action == "BUY":
+                # 진입 금액 계산
+                if available_balance is None:
+                    size_usd = 1000000  # 기본값: 100만원
+                else:
+                    size_usd = available_balance * self.config.entry_position_size_ratio
+                
+                return TradingDecision(
+                    timestamp=market_data.timestamp,
+                    symbol=self.config.symbol,
+                    action="BUY",
+                    size_usd=size_usd,
+                    reason=signal.reason,
+                    price=current_price
+                )
+            else:
+                # 진입 신호 없음
+                rsi = indicators.get('rsi', 0)
+                return TradingDecision(
+                    timestamp=market_data.timestamp,
+                    symbol=self.config.symbol,
+                    action="HOLD",
+                    size_usd=0.0,
+                    reason=f"RSI_진입_조건_불만족_RSI={rsi:.1f}" if rsi else "RSI_계산_실패",
+                    price=current_price
+                )
+        
         else:
             # === 포지션 있음 → 청산 판단 (추가 매수 없음) ===
             entry_price = current_position['entry_price']
@@ -130,33 +204,83 @@ class DecisionEngine:
             # 손익률 계산
             pnl_pct = ((current_price - entry_price) / entry_price) * 100
             
-            # 보유 시간 계산
-            hold_time = market_data.timestamp - entry_time
+            # 보유 시간 계산 (분 단위)
+            # 타임존 일치 처리 (둘 다 naive로 변환)
+            from datetime import datetime
+            market_ts = market_data.timestamp
+            entry_ts = entry_time
             
-            # TODO: 사용자가 직접 청산 조건 구현
-            # 예시:
-            # if pnl_pct > take_profit_threshold:
-            #     action = "SELL"
-            #     reason = f"take_profit_{pnl_pct:.2f}%"
-            # elif pnl_pct < stop_loss_threshold:
-            #     action = "SELL"
-            #     reason = f"stop_loss_{pnl_pct:.2f}%"
-            # elif hold_time > max_hold_time:
-            #     action = "SELL"
-            #     reason = f"max_hold_time_exceeded"
-            # else:
-            #     action = "HOLD"
-            #     reason = "청산_조건_불만족"
+            # 타임존 제거
+            if hasattr(market_ts, 'tzinfo') and market_ts.tzinfo is not None:
+                if isinstance(market_ts, datetime):
+                    market_ts = market_ts.replace(tzinfo=None)
+            if hasattr(entry_ts, 'tzinfo') and entry_ts.tzinfo is not None:
+                if isinstance(entry_ts, datetime):
+                    entry_ts = entry_ts.replace(tzinfo=None)
             
-            action = "HOLD"
-            size_usd = 0.0
-            reason = "청산_조건_미구현"
-        
-        return TradingDecision(
-            timestamp=market_data.timestamp,
-            symbol=self.config.symbol,
-            action=action,
-            size_usd=size_usd,
-            reason=reason,
-            price=current_price
-        )
+            hold_time = market_ts - entry_ts
+            hold_time_minutes = hold_time.total_seconds() / 60
+            
+            # 청산 조건 체크 (우선순위 순)
+            
+            # 1순위: 손절
+            if pnl_pct <= self.config.stop_loss_pct:
+                return TradingDecision(
+                    timestamp=market_data.timestamp,
+                    symbol=self.config.symbol,
+                    action="SELL",
+                    size_usd=0.0,  # 전체 청산
+                    reason=f"손절_{pnl_pct:.2f}%",
+                    price=current_price
+                )
+            
+            # 2순위: 익절
+            if pnl_pct >= self.config.take_profit_pct:
+                return TradingDecision(
+                    timestamp=market_data.timestamp,
+                    symbol=self.config.symbol,
+                    action="SELL",
+                    size_usd=0.0,  # 전체 청산
+                    reason=f"익절_{pnl_pct:.2f}%",
+                    price=current_price
+                )
+            
+            # 3순위: 최대 보유 시간 초과
+            if hold_time_minutes >= self.config.max_hold_time_minutes:
+                return TradingDecision(
+                    timestamp=market_data.timestamp,
+                    symbol=self.config.symbol,
+                    action="SELL",
+                    size_usd=0.0,  # 전체 청산
+                    reason=f"최대_보유시간_초과_{hold_time_minutes:.1f}분",
+                    price=current_price
+                )
+            
+            # 4순위: RSI 중립선 회복 (SignalEngine 사용)
+            signal = self.signal_engine.generate_signal(
+                market_data=market_data,
+                indicators=indicators,
+                current_position=current_position
+            )
+            
+            if signal and signal.action == "SELL":
+                return TradingDecision(
+                    timestamp=market_data.timestamp,
+                    symbol=self.config.symbol,
+                    action="SELL",
+                    size_usd=0.0,  # 전체 청산
+                    reason=signal.reason,
+                    price=current_price
+                )
+            
+            # 청산 조건 불만족 → 보유
+            rsi = indicators.get('rsi')
+            rsi_str = f"{rsi:.1f}" if rsi else "N/A"
+            return TradingDecision(
+                timestamp=market_data.timestamp,
+                symbol=self.config.symbol,
+                action="HOLD",
+                size_usd=0.0,
+                reason=f"보유중_PnL={pnl_pct:.2f}%_RSI={rsi_str}_Hold={hold_time_minutes:.1f}분",
+                price=current_price
+            )

@@ -11,7 +11,9 @@ from pathlib import Path
 import csv
 
 from core.strategy_core import StrategyConfig, DecisionEngine, MarketData, TradingDecision
-from core.exchange_api_backtest import BacktestExchangeAPI
+# NOTE: This file uses a different exchange API interface
+# For production backtest, use backtest/backtest_runner.py instead
+# from api.exchange_api_backtest import ExchangeAPIBacktest
 
 
 class MinimalBacktestRunner:

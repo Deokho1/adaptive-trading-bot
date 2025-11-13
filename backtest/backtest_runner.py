@@ -12,7 +12,10 @@ import pandas as pd
 from backtest.data_loader import BacktestDataLoader
 from api.exchange_api_backtest import ExchangeAPIBacktest
 from core.strategy_core import DecisionEngine, StrategyConfig, MarketData, TradingDecision
-import config
+from reports.metrics import Metrics
+from reports.trade_reporter import TradeReporter
+from reports.visualization import Visualization
+import config as app_config
 
 
 class BacktestRunner:
@@ -41,6 +44,11 @@ class BacktestRunner:
         # 결과 저장
         self.equity_curve: List[Dict] = []  # 자산 곡선
         self.trades: List[Dict] = []  # 거래 내역
+        
+        # Reports 모듈
+        self.metrics = Metrics()
+        self.trade_reporter = TradeReporter(output_dir="results")
+        self.visualization = Visualization(output_dir="results")
         
     def load_config(self) -> Dict[str, Any]:
         """
@@ -82,7 +90,7 @@ class BacktestRunner:
         
         # 3. 가상 거래소 API 초기화
         print("\n[INFO] Initializing virtual exchange...")
-        backtest_config = config.CONFIG.get("backtest", {})
+        backtest_config = app_config.CONFIG.get("backtest", {})
         
         initial_capital = backtest_config.get("initial_capital", 10000000)
         fee_rate = backtest_config.get("fee_rate", 0.0005)
@@ -117,8 +125,8 @@ class BacktestRunner:
         # 6. 마지막 포지션 정리
         self._close_all_positions(df, config['symbol'])
         
-        # 7. 결과 출력
-        self._print_results(initial_capital)
+        # 7. 결과 리포트 생성
+        self._generate_report(initial_capital)
     
     def _run_backtest_loop(self, df: pd.DataFrame, symbol: str):
         """
@@ -160,9 +168,11 @@ class BacktestRunner:
             position = self.exchange.get_position(symbol)
             
             # 3. 전략 결정
+            available_balance = self.exchange.get_balance()
             decision = self.decision_engine.make_decision(
                 market_data=market_data,
-                current_position=position
+                current_position=position,
+                available_balance=available_balance
             )
             
             # 4. 거래 실행
@@ -260,9 +270,9 @@ class BacktestRunner:
                 })
                 print(f"[OK] Position closed")
     
-    def _print_results(self, initial_capital: float):
+    def _generate_report(self, initial_capital: float):
         """
-        백테스트 결과 출력
+        백테스트 결과 리포트 생성 (덮어쓰기 방식)
         
         Args:
             initial_capital: 초기 자본
@@ -271,52 +281,46 @@ class BacktestRunner:
             print("\n[WARN] No equity curve data")
             return
         
-        final_equity = self.equity_curve[-1]['equity']
-        final_balance = self.exchange.get_balance()
-        total_return = ((final_equity - initial_capital) / initial_capital) * 100
+        # 1. 지표 계산
+        metrics_result = self.metrics.calculate_all_metrics(
+            self.equity_curve,
+            self.trades,
+            initial_capital
+        )
         
-        # 거래 통계
-        buy_trades = [t for t in self.trades if t['action'] == 'BUY']
-        sell_trades = [t for t in self.trades if t['action'] == 'SELL']
-        total_trades = len(buy_trades) + len(sell_trades)
+        # 2. 텍스트 리포트 출력
+        summary = self.trade_reporter.generate_trade_summary(
+            self.trades,
+            metrics_result
+        )
+        print(summary)
         
-        # 수익 거래 통계
-        profitable_trades = [t for t in sell_trades if t.get('pnl', 0) > 0]
-        losing_trades = [t for t in sell_trades if t.get('pnl', 0) < 0]
-        win_rate = (len(profitable_trades) / len(sell_trades) * 100) if sell_trades else 0
+        # 3. CSV 파일 저장 (덮어쓰기)
+        csv_paths = self.trade_reporter.export_to_csv(
+            self.trades,
+            self.equity_curve,
+            metrics_result
+        )
+        print(f"\n[OK] CSV files saved:")
+        for name, path in csv_paths.items():
+            print(f"   {name}: {path}")
         
-        # 총 수수료
-        total_fees = sum(t.get('fee', 0) for t in self.trades)
+        # 4. 엑셀 내보내기 (덮어쓰기)
+        excel_path = self.trade_reporter.export_to_excel(
+            self.trades,
+            self.equity_curve,
+            metrics_result,
+            filename="backtest_report.xlsx"
+        )
+        if excel_path:
+            print(f"[OK] Excel report: {excel_path}")
         
-        # 평균 보유 시간 (단타 특화)
-        hold_times = []
-        for sell_trade in sell_trades:
-            entry_price = sell_trade.get('entry_price')
-            if entry_price:
-                # 매도 거래의 entry_price로 매수 거래 찾기
-                matching_buy = next(
-                    (b for b in buy_trades 
-                     if abs(b['price'] - entry_price) < entry_price * 0.01 and 
-                     b['timestamp'] < sell_trade['timestamp']),
-                    None
-                )
-                if matching_buy:
-                    hold_time = sell_trade['timestamp'] - matching_buy['timestamp']
-                    hold_times.append(hold_time.total_seconds() / 60)  # 분 단위
-        
-        avg_hold_time = sum(hold_times) / len(hold_times) if hold_times else 0
-        
-        print("\n" + "="*60)
-        print("📊 백테스트 결과")
-        print("="*60)
-        print(f"초기 자본: {initial_capital:,.0f} KRW")
-        print(f"최종 자산: {final_equity:,.0f} KRW")
-        print(f"최종 잔고: {final_balance:,.0f} KRW")
-        print(f"총 수익률: {total_return:+.2f}%")
-        print(f"\n거래 통계:")
-        print(f"  총 거래 수: {total_trades}회 (매수: {len(buy_trades)}, 매도: {len(sell_trades)})")
-        print(f"  승률: {win_rate:.1f}% ({len(profitable_trades)}승 / {len(losing_trades)}패)")
-        print(f"  총 수수료: {total_fees:,.0f} KRW")
-        if avg_hold_time > 0:
-            print(f"  평균 보유 시간: {avg_hold_time:.1f}분")
-        print("="*60)
+        # 5. 차트 생성 (덮어쓰기)
+        chart_paths = self.visualization.plot_all(
+            self.equity_curve,
+            self.trades
+        )
+        if chart_paths:
+            print(f"[OK] Charts saved:")
+            for name, path in chart_paths.items():
+                print(f"   {name}: {path}")
