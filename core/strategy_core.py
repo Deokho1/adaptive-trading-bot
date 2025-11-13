@@ -16,28 +16,51 @@ import pandas as pd
 from core.market_watcher import MarketWatcher
 from core.signal_engine import SignalEngine
 
+# config에서 전략 파라미터 읽기
+try:
+    import config as app_config
+    STRATEGY_CONFIG = app_config.CONFIG.get("strategy", {})
+except:
+    STRATEGY_CONFIG = {}
+
 
 @dataclass
 class StrategyConfig:
-    """전략 설정 파라미터 - 사용자가 직접 값을 설정"""
+    """전략 설정 파라미터 - config.py에서 관리"""
     
     # 기본 설정
     symbol: str = "KRW-BTC"
     timeframe: str = "1m"
     
-    # RSI 파라미터
-    rsi_period: int = 14  # RSI 계산 기간
-    rsi_oversold: float = 30.0  # 과매도 기준 (진입)
-    rsi_exit: float = 50.0  # 청산 기준 (중립선 회복)
+    # RSI 파라미터 (config.py에서 읽어옴, 없으면 기본값 사용)
+    rsi_period: int = None
+    rsi_oversold: float = None
+    rsi_exit: float = None
     
-    # 진입 조건
-    entry_volume_ratio: float = 1.2  # 거래량 필터 (평균의 1.2배 이상, 0이면 필터 비활성화)
-    entry_position_size_ratio: float = 0.1  # 진입 금액 비율 (자본의 10%)
+    # 진입 조건 (config.py에서 읽어옴, 없으면 기본값 사용)
+    entry_volume_ratio: float = None
+    entry_position_size_ratio: float = None
     
-    # 청산 조건
-    take_profit_pct: float = 0.3  # 익절: +0.3%
-    stop_loss_pct: float = -0.2  # 손절: -0.2%
-    max_hold_time_minutes: int = 5  # 최대 보유 시간: 5분
+    # 청산 조건 (config.py에서 읽어옴, 없으면 기본값 사용)
+    take_profit_pct: float = None
+    stop_loss_pct: float = None
+    max_hold_time_minutes: int = None
+    
+    def __post_init__(self):
+        """config.py에서 값을 읽어와서 설정 (없으면 기본값 사용)"""
+        # RSI 파라미터
+        self.rsi_period = self.rsi_period if self.rsi_period is not None else STRATEGY_CONFIG.get("rsi_period", 14)
+        self.rsi_oversold = self.rsi_oversold if self.rsi_oversold is not None else STRATEGY_CONFIG.get("rsi_oversold", 30.0)
+        self.rsi_exit = self.rsi_exit if self.rsi_exit is not None else STRATEGY_CONFIG.get("rsi_exit", 50.0)
+        
+        # 진입 조건
+        self.entry_volume_ratio = self.entry_volume_ratio if self.entry_volume_ratio is not None else STRATEGY_CONFIG.get("entry_volume_ratio", 1.2)
+        self.entry_position_size_ratio = self.entry_position_size_ratio if self.entry_position_size_ratio is not None else STRATEGY_CONFIG.get("entry_position_size_ratio", 0.1)
+        
+        # 청산 조건
+        self.take_profit_pct = self.take_profit_pct if self.take_profit_pct is not None else STRATEGY_CONFIG.get("take_profit_pct", 0.3)
+        self.stop_loss_pct = self.stop_loss_pct if self.stop_loss_pct is not None else STRATEGY_CONFIG.get("stop_loss_pct", -0.2)
+        self.max_hold_time_minutes = self.max_hold_time_minutes if self.max_hold_time_minutes is not None else STRATEGY_CONFIG.get("max_hold_time_minutes", 5)
     
 
 @dataclass
