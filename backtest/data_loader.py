@@ -17,6 +17,7 @@ from data_tools.schema import (
     Candle, ensure_candle_schema, validate_candle_data, 
     candles_to_dataframe, dataframe_to_candles, REQUIRED_CANDLE_COLUMNS
 )
+from data_tools.build_datasets import DatasetBuilder
 
 
 class BacktestDataLoader:
@@ -354,6 +355,202 @@ class BacktestDataLoader:
             raise ValueError(f"Unsupported format: {format}")
         
         print(f"Saved {len(df)} rows to {file_path}")
+    
+    def _generate_filename(
+        self,
+        symbol: str,
+        interval: str,
+        start_date: datetime,
+        end_date: datetime
+    ) -> str:
+        """
+        파일명 생성 (build_datasets.py와 동일한 패턴)
+        
+        Args:
+            symbol: 심볼
+            interval: 간격
+            start_date: 시작일
+            end_date: 종료일
+            
+        Returns:
+            파일명 (확장자 제외)
+        """
+        norm_symbol = symbol.replace('-', '_').replace('/', '_').lower()
+        start_str = start_date.strftime("%Y%m%d")
+        end_str = end_date.strftime("%Y%m%d")
+        return f"{norm_symbol}_{interval}_{start_str}_{end_str}_processed"
+    
+    def _find_data_file(
+        self,
+        symbol: str,
+        interval: str,
+        start_date: datetime,
+        end_date: datetime
+    ) -> Optional[str]:
+        """
+        기존 데이터 파일 찾기
+        
+        Args:
+            symbol: 심볼
+            interval: 간격
+            start_date: 시작일
+            end_date: 종료일
+            
+        Returns:
+            파일명 (없으면 None)
+        """
+        expected_filename_base = self._generate_filename(symbol, interval, start_date, end_date)
+        
+        # CSV, Parquet 파일 확인
+        for ext in ['.csv', '.parquet']:
+            filename = expected_filename_base + ext
+            file_path = self.data_dir / filename
+            if file_path.exists():
+                return filename
+        
+        # 부분 매칭 시도 (날짜 범위가 포함되는 파일 찾기)
+        available_files = self.list_available_data()
+        all_files = []
+        for file_type, files in available_files.items():
+            all_files.extend(files)
+        
+        # 심볼과 간격이 일치하는 파일 찾기
+        norm_symbol = symbol.replace('-', '_').lower()
+        for filename in all_files:
+            if norm_symbol in filename.lower() and interval in filename:
+                # 파일명에서 날짜 추출 시도
+                try:
+                    # 파일 로드해서 날짜 범위 확인
+                    df = self.load_candles_from_file(filename, symbol_filter=symbol, validate=False)
+                    if not df.empty:
+                        file_start = df['timestamp'].min()
+                        file_end = df['timestamp'].max()
+                        # 요청한 날짜 범위가 파일 범위 안에 있는지 확인
+                        if file_start <= start_date and file_end >= end_date:
+                            return filename
+                except Exception:
+                    continue
+        
+        return None
+    
+    def load_data_for_backtest(
+        self,
+        symbol: str,
+        interval: str,
+        days: int,
+        exchange: str = "upbit"
+    ) -> pd.DataFrame:
+        """
+        백테스트용 데이터 로드 (없으면 자동 생성)
+        
+        Args:
+            symbol: 심볼 (예: "KRW-BTC")
+            interval: 캔들 간격 (예: "1h", "1d")
+            days: 며칠치 데이터 (현재부터 N일 전까지)
+            exchange: 거래소 (기본값: "upbit")
+            
+        Returns:
+            데이터 DataFrame
+            
+        Raises:
+            FileNotFoundError: 데이터 생성 실패 시
+            ValueError: 데이터 로드 실패 시
+        """
+        import pytz
+        
+        # 날짜 범위 계산
+        end_date = datetime.now(pytz.UTC)
+        start_date = end_date - timedelta(days=days)
+        
+        print(f"   Request: {symbol} {interval}, {days} days ({start_date.date()} ~ {end_date.date()})")
+        
+        # 1. 기존 데이터 파일 찾기
+        filename = self._find_data_file(symbol, interval, start_date, end_date)
+        
+        if filename:
+            print(f"   [OK] Existing data file found: {filename}")
+            try:
+                df = self.load_candles_from_file(
+                    filename,
+                    symbol_filter=symbol,
+                    date_range=(start_date, end_date),
+                    validate=True
+                )
+                if not df.empty:
+                    print(f"   [OK] Data loaded: {len(df)} candles")
+                    return df
+            except Exception as e:
+                print(f"   [WARN] Failed to load existing file: {e}")
+                print(f"   Generating new data...")
+        
+        # 2. 데이터가 없으면 생성
+        print(f"   [INFO] Collecting data...")
+        builder = DatasetBuilder()
+        
+        try:
+            result = builder.build_single_dataset(
+                exchange=exchange,
+                symbol=symbol,
+                interval=interval,
+                start_date=start_date,
+                end_date=end_date,
+                save_formats=["csv"]  # CSV만 저장 (빠른 로딩)
+            )
+            
+            if result["status"] != "completed":
+                error_msg = result.get("errors", ["Unknown error"])
+                raise FileNotFoundError(f"데이터 생성 실패: {', '.join(error_msg)}")
+            
+            # 3. 생성된 파일 읽기
+            created_files = result.get("files_created", [])
+            csv_files = [f for f in created_files if f.endswith('.csv')]
+            
+            if not csv_files:
+                raise FileNotFoundError("생성된 CSV 파일을 찾을 수 없습니다")
+            
+            # 파일명만 추출 (전체 경로에서 파일명만)
+            created_file_path = Path(csv_files[0])
+            created_filename = created_file_path.name
+            
+            print(f"   [OK] Data generated: {created_filename}")
+            
+            # 생성된 파일 읽기 (날짜 필터링 없이 전체 로드 후 필터링)
+            try:
+                # symbol_filter 없이 먼저 로드 (스키마 확인용)
+                df = self.load_candles_from_file(
+                    created_filename,
+                    symbol_filter=None,  # 필터 없이 전체 로드
+                    date_range=None,  # 전체 로드
+                    validate=True
+                )
+                
+                # 심볼 필터링 (로드 후) - 필요시에만
+                if symbol and 'symbol' in df.columns and not df.empty:
+                    unique_symbols = df['symbol'].unique()
+                    if symbol in unique_symbols:
+                        df = df[df['symbol'] == symbol]
+                    # 심볼이 일치하지 않아도 전체 데이터 사용 (단일 심볼 파일이므로)
+            except Exception as load_error:
+                raise ValueError(f"File load failed: {load_error}") from load_error
+            
+            if df.empty:
+                raise ValueError("Generated data file is empty")
+            
+            # 날짜 범위 필터링 (로드 후)
+            if 'timestamp' in df.columns:
+                df = df[(df['timestamp'] >= start_date) & (df['timestamp'] <= end_date)]
+                df = df.sort_values('timestamp').reset_index(drop=True)
+            
+            if df.empty:
+                raise ValueError(f"No data in requested date range ({start_date.date()} ~ {end_date.date()})")
+            
+            print(f"   [OK] Data loaded: {len(df)} candles")
+            return df
+            
+        except Exception as e:
+            error_msg = f"Data load failed: {str(e)}"
+            print(f"   [ERROR] {error_msg}")
+            raise FileNotFoundError(error_msg) from e
 
 
 # 편의 함수들

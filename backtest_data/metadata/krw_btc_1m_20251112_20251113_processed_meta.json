@@ -1,0 +1,30 @@
+{
+  "symbol": "KRW-BTC",
+  "exchange": "upbit",
+  "interval": "1m",
+  "start_date": "2025-11-12T02:50:20.195880+00:00",
+  "end_date": "2025-11-13T02:50:20.195880+00:00",
+  "build_timestamp": "2025-11-13T11:50:20.210241",
+  "status": "started",
+  "candles_collected": 1440,
+  "files_created": [
+    "backtest_data\\processed\\krw_btc_1m_20251112_20251113_processed.csv"
+  ],
+  "errors": [],
+  "data_quality": {
+    "date_range_actual": {
+      "start": "2025-11-12T02:51:00+00:00",
+      "end": "2025-11-13T02:50:00+00:00"
+    },
+    "missing_candles": 0,
+    "price_stats": {
+      "min_price": 152001000.0,
+      "max_price": 157200000.0,
+      "avg_price": 154544970.83333334
+    },
+    "volume_stats": {
+      "total_volume": 1385.3084936700002,
+      "avg_volume": 0.9620197872708335
+    }
+  }
+}

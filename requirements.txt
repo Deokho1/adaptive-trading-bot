@@ -1,0 +1,9 @@
+pyupbit==0.2.34
+pandas==2.2.0
+numpy==1.26.3
+python-dotenv==1.0.0
+ta-lib==0.4.28
+ta==0.11.0
+websocket-client==1.7.0
+requests==2.31.0
+
